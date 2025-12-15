@@ -1,0 +1,5 @@
+{
+  "name": "AppMod Battle Royal",
+  "description": "A Kahoot-style quiz game where a host generates questions using Gemini and players compete in real-time across tabs.",
+  "requestFramePermissions": []
+}
