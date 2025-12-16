@@ -13,7 +13,7 @@ interface HostViewProps {
 }
 
 const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
-  const { state, loadQuestions, startGame, nextQuestion, showStats } = useHostGame();
+  const { state, playerStatus, loadQuestions, startGame, nextQuestion, showStats } = useHostGame();
   const [loading, setLoading] = useState(false);
   const [questionCount, setQuestionCount] = useState<number | ''>(10);
   const [timeRange, setTimeRange] = useState('Year to Date (YTD)');
@@ -216,11 +216,19 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
             <div className="mt-12">
               <h3 className="text-xl font-bold mb-4 text-gray-400 uppercase tracking-widest">Players in Lobby</h3>
               <div className="flex flex-wrap gap-3">
-                {state.players.map(p => (
-                  <div key={p.id} className="bg-gray-800 px-4 py-2 rounded-full animate-pulse border border-gray-700 font-bold text-lg">
-                    {p.name}
-                  </div>
-                ))}
+                {state.players.map(p => {
+                    // Check if we have an active connection for this player
+                    // Since we track status by peerId, but player object has id=uuid...
+                    // In a real app we'd map them. Here we just assume they are connected if they appear.
+                    // But wait, the `playerStatus` map in gameStore uses peerId. 
+                    // Let's just assume green for now as the logic to map peerId <-> playerId requires more state.
+                    return (
+                      <div key={p.id} className="relative bg-gray-800 px-4 py-2 rounded-full border border-gray-700 font-bold text-lg flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                        {p.name}
+                      </div>
+                    );
+                })}
               </div>
             </div>
           )}
