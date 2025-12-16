@@ -10,7 +10,7 @@ Originally vibe coded in Google AI studio.
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` and `VITE_HOST_PASSWORD` in [.env.local](.env.local).
+2. Set the `GEMINI_API_KEY` and `VITE_HOST_PASSWORD` in .env.local
 3. Run the app:
    `npm run dev`
 
@@ -20,7 +20,7 @@ Originally vibe coded in Google AI studio.
 
 1. Ensure you are authenticated with Google Cloud:
    `gcloud auth login`
-2. Set the `GEMINI_API_KEY` and `VITE_HOST_PASSWORD` in [.env.local](.env.local).
+2. Set the `GEMINI_API_KEY` and `VITE_HOST_PASSWORD` in .env.local
 3. Run the deployment script:
    `./deploy.sh`
 
