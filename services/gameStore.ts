@@ -59,6 +59,12 @@ export const useHostGame = () => {
       });
 
       conn.on('data', (data: any) => {
+        // Handle explicit state requests from stuck players
+        if (data && data.type === 'REQUEST_STATE') {
+             console.log('Sync requested by:', conn.peer);
+             conn.send({ type: MessageType.SYNC_STATE, payload: stateRef.current });
+             return;
+        }
         handleMessage(data);
       });
 
@@ -90,6 +96,9 @@ export const useHostGame = () => {
 
   // Broadcast state whenever it changes locally
   useEffect(() => {
+    // We throttle timer updates to avoid saturating the network? 
+    // Actually PeerJS usually handles it, but let's be safe.
+    // For now, raw broadcast is fine for < 100 players.
     connectionsRef.current.forEach((conn) => {
         if (conn.open) {
             conn.send({ type: MessageType.SYNC_STATE, payload: state });
@@ -321,11 +330,19 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
         });
     }
   };
+  
+  const requestSync = () => {
+      if (connRef.current && connRef.current.open) {
+          console.log("Requesting manual sync...");
+          connRef.current.send({ type: 'REQUEST_STATE' });
+      }
+  };
 
   return {
     state,
     playerId,
     submitAnswer,
-    connected
+    connected,
+    requestSync
   };
 };

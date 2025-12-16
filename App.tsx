@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import HostView from './components/HostView';
 import PlayerGame from './components/PlayerGame';
 import Lobby from './components/Lobby';
@@ -176,7 +176,18 @@ function App() {
 
 // Wrapper to isolate Player Hook
 const PlayerWrapper: React.FC<{ playerName: string, gamePin: string }> = ({ playerName, gamePin }) => {
-  const { state, playerId, submitAnswer, connected } = usePlayerGame(playerName, gamePin);
+  const { state, playerId, submitAnswer, connected, requestSync } = usePlayerGame(playerName, gamePin);
+
+  // Listen for the custom event from Lobby
+  useEffect(() => {
+      const handleSyncRequest = () => {
+          requestSync();
+      };
+      document.addEventListener('appmod-request-sync', handleSyncRequest);
+      return () => {
+          document.removeEventListener('appmod-request-sync', handleSyncRequest);
+      };
+  }, [requestSync]);
 
   if (!connected) {
     return (
