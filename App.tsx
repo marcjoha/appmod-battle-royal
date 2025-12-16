@@ -6,10 +6,6 @@ import SnowOverlay from './components/SnowOverlay';
 import { usePlayerGame } from './services/gameStore';
 import { GameStatus } from './types';
 
-// Simple obfuscation to hide "ballerina" from plain text search
-// "ballerina" -> reversed "anirellab" -> btoa "YW5pcmVsbGFi"
-const TARGET_HASH = 'YW5pcmVsbGFi';
-
 function App() {
   // Simple routing state
   const [role, setRole] = useState<'home' | 'host' | 'player' | 'host-login'>('home');
@@ -19,17 +15,12 @@ function App() {
   const [errorMsg, setErrorMsg] = useState('');
 
   const verifyHostPassword = () => {
-    try {
-      const encoded = btoa(hostPassword.split('').reverse().join(''));
-      if (encoded === TARGET_HASH) {
-        setRole('host');
-        setErrorMsg('');
-        setHostPassword('');
-      } else {
-        setErrorMsg('Incorrect password');
-      }
-    } catch (e) {
-      setErrorMsg('Error processing password');
+    if (hostPassword === import.meta.env.VITE_HOST_PASSWORD) {
+      setRole('host');
+      setErrorMsg('');
+      setHostPassword('');
+    } else {
+      setErrorMsg('Incorrect password');
     }
   };
 
