@@ -1,6 +1,7 @@
 import React from 'react';
 import { GameState, GameStatus } from '../types';
 import { ANSWER_COLORS } from '../constants';
+import SnowOverlay from './SnowOverlay';
 
 interface PlayerGameProps {
   state: GameState;
@@ -58,9 +59,10 @@ const PlayerGame: React.FC<PlayerGameProps> = ({ state, playerId, submitAnswer }
     const rank = sorted.findIndex(p => p.id === playerId) + 1;
 
     return (
-        <div className="min-h-screen bg-purple-900 text-white flex flex-col items-center justify-center p-6">
-            <h1 className="text-3xl font-bold mb-8">Game Over</h1>
-            <div className="bg-purple-800 p-8 rounded-lg text-center w-full max-w-sm border border-purple-600">
+        <div className="min-h-screen bg-purple-900 text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
+            <SnowOverlay />
+            <h1 className="text-3xl font-bold mb-8 relative z-10">Game Over</h1>
+            <div className="bg-purple-800 p-8 rounded-lg text-center w-full max-w-sm border border-purple-600 relative z-10">
                 <div className="text-gray-400 mb-2">You finished</div>
                 <div className="text-6xl font-black mb-2">{rank}<span className="text-2xl align-top">th</span></div>
                 <div className="text-2xl font-bold text-purple-300">{player.score} pts</div>

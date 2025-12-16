@@ -1,6 +1,7 @@
 import React from 'react';
 import { GameState } from '../types';
 import { usePlayerGame } from '../services/gameStore';
+import SnowOverlay from './SnowOverlay';
 
 interface LobbyProps {
   state: GameState;
@@ -14,11 +15,13 @@ const Lobby: React.FC<LobbyProps> = ({ state, playerName }) => {
   // No, let's keep it simple. The PlayerWrapper has the hook.
   // I will modify App.tsx to pass requestSync to Lobby.
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-purple-900 text-white p-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-purple-900 text-white p-4 relative overflow-hidden">
+      <SnowOverlay />
+      <div className="relative z-10 flex flex-col items-center w-full max-w-md">
       <div className="animate-bounce text-6xl mb-8">🎮</div>
       <h1 className="text-4xl font-black mb-8">You're in!</h1>
       
-      <div className="bg-purple-800 p-6 rounded-lg shadow-xl w-full max-w-md text-center border-2 border-purple-600">
+      <div className="bg-purple-800 p-6 rounded-lg shadow-xl w-full text-center border-2 border-purple-600">
         <h2 className="text-2xl font-bold mb-2">{playerName}</h2>
         <p className="text-purple-300">Waiting for host to start...</p>
       </div>
@@ -41,6 +44,7 @@ const Lobby: React.FC<LobbyProps> = ({ state, playerName }) => {
          >
            Refresh Status
          </button>
+      </div>
       </div>
     </div>
   );

@@ -1,51 +1,14 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import HostView from './components/HostView';
 import PlayerGame from './components/PlayerGame';
 import Lobby from './components/Lobby';
+import SnowOverlay from './components/SnowOverlay';
 import { usePlayerGame } from './services/gameStore';
 import { GameStatus } from './types';
 
 // Simple obfuscation to hide "ballerina" from plain text search
 // "ballerina" -> reversed "anirellab" -> btoa "YW5pcmVsbGFi"
 const TARGET_HASH = 'YW5pcmVsbGFi';
-
-// Snow Overlay Component for December
-const SnowOverlay = React.memo(() => {
-  const flakes = useMemo(() => Array.from({ length: 50 }).map((_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    width: Math.random() * 5 + 3,
-    duration: Math.random() * 10 + 5,
-    delay: Math.random() * 5,
-    opacity: Math.random() * 0.4 + 0.2
-  })), []);
-
-  return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden select-none z-0">
-      <style>{`
-        @keyframes snowfall {
-          from { transform: translateY(-20px) translateX(0); }
-          to { transform: translateY(120vh) translateX(20px); }
-        }
-      `}</style>
-      {flakes.map(flake => (
-        <div
-          key={flake.id}
-          className="absolute bg-white rounded-full"
-          style={{
-            left: `${flake.left}%`,
-            top: -20,
-            width: `${flake.width}px`,
-            height: `${flake.width}px`,
-            opacity: flake.opacity,
-            animation: `snowfall ${flake.duration}s linear infinite`,
-            animationDelay: `-${flake.delay}s`,
-          }}
-        />
-      ))}
-    </div>
-  );
-});
 
 function App() {
   // Simple routing state
@@ -80,8 +43,9 @@ function App() {
 
   if (role === 'host-login') {
     return (
-      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4 text-white">
-        <div className="max-w-md w-full bg-gray-800 p-8 rounded-lg shadow-2xl border border-gray-700">
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4 text-white relative overflow-hidden">
+        <SnowOverlay />
+        <div className="max-w-md w-full bg-gray-800 p-8 rounded-lg shadow-2xl border border-gray-700 relative z-10">
           <h2 className="text-3xl font-bold mb-6 text-center text-purple-400">Host Access</h2>
           <p className="mb-6 text-gray-400 text-center">Please enter the host password.</p>
           
@@ -122,11 +86,9 @@ function App() {
     );
   }
 
-  const isDecember = new Date().getMonth() === 11;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-700 to-indigo-900 flex flex-col items-center justify-center p-4 text-white relative overflow-hidden">
-      {isDecember && <SnowOverlay />}
+      <SnowOverlay />
       <div className="text-center max-w-md w-full relative z-10">
         <h1 className="text-5xl font-black mb-2 tracking-tighter">AppMod</h1>
         <h2 className="text-2xl font-bold mb-8 text-purple-200 uppercase tracking-widest">Battle Royal</h2>

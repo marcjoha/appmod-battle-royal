@@ -4,6 +4,7 @@ import { generateQuestions } from '../services/gemini';
 import { GameStatus } from '../types';
 import { ANSWER_COLORS, ANSWER_SHAPES } from '../constants';
 import { ResponsiveContainer, BarChart as RBarChart, Bar as RBar, XAxis as RXAxis, Cell } from 'recharts';
+import SnowOverlay from './SnowOverlay';
 
 // Lounge music URL (Royalty Free Bossa Nova style)
 const MUSIC_URL = "https://cdn.pixabay.com/audio/2022/11/22/audio_febc508520.mp3";
@@ -124,8 +125,9 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
 
   if (state.status === GameStatus.LOBBY) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white p-8">
-        <div className="max-w-4xl mx-auto">
+      <div className="min-h-screen bg-gray-900 text-white p-8 relative overflow-hidden">
+        <SnowOverlay />
+        <div className="max-w-4xl mx-auto relative z-10">
           <header className="flex flex-col md:flex-row justify-between items-center mb-12 gap-4">
              <div className="flex items-center gap-4">
                <h1 className="text-3xl font-black text-purple-400">AppMod Battle Royal</h1>
@@ -244,9 +246,10 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
   // GAME PLAYING / REVEAL VIEW
   if (state.status === GameStatus.FINISHED) {
     return (
-      <div className="min-h-screen bg-purple-900 text-white flex flex-col items-center justify-center p-8">
-        <h1 className="text-5xl font-black mb-24">Podium</h1>
-        <div className="flex items-end gap-4 mb-12 h-64">
+      <div className="min-h-screen bg-purple-900 text-white flex flex-col items-center justify-center p-8 relative overflow-hidden">
+        <SnowOverlay />
+        <h1 className="text-5xl font-black mb-24 relative z-10">Podium</h1>
+        <div className="flex items-end gap-4 mb-12 h-64 relative z-10">
            {/* Determine podium logic */}
            {(() => {
               const sortedPlayers = [...state.players].sort((a, b) => b.score - a.score);
