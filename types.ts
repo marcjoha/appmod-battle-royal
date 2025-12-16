@@ -27,6 +27,7 @@ export interface GameState {
   players: Player[];
   timer: number; // Seconds remaining
   hostId: string; // To prevent multiple hosts taking over logically
+  gamePin: string; // 6-digit pin for players to join
 }
 
 export enum MessageType {

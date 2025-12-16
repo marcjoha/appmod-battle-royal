@@ -51,6 +51,7 @@ function App() {
   // Simple routing state
   const [role, setRole] = useState<'home' | 'host' | 'player' | 'host-login'>('home');
   const [playerName, setPlayerName] = useState('');
+  const [gamePin, setGamePin] = useState('');
   const [hostPassword, setHostPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -74,7 +75,7 @@ function App() {
   }
 
   if (role === 'player') {
-    return <PlayerWrapper playerName={playerName} />;
+    return <PlayerWrapper playerName={playerName} gamePin={gamePin} />;
   }
 
   if (role === 'host-login') {
@@ -131,18 +132,28 @@ function App() {
         <h2 className="text-2xl font-bold mb-8 text-purple-200 uppercase tracking-widest">Battle Royal</h2>
         
         <div className="bg-white text-gray-900 p-6 rounded-lg shadow-2xl mb-8">
-          <input
-            type="text"
-            placeholder="Enter your nickname"
-            className="w-full bg-gray-100 border-2 border-gray-300 rounded p-4 text-center font-bold text-xl mb-4 focus:outline-none focus:border-purple-600"
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && playerName && setRole('player')}
-          />
+          <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Game PIN (6 digits)"
+                className="w-full bg-gray-100 border-2 border-gray-300 rounded p-4 text-center font-bold text-xl focus:outline-none focus:border-purple-600 tracking-widest"
+                value={gamePin}
+                maxLength={6}
+                onChange={(e) => setGamePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              />
+              <input
+                type="text"
+                placeholder="Enter your nickname"
+                className="w-full bg-gray-100 border-2 border-gray-300 rounded p-4 text-center font-bold text-xl focus:outline-none focus:border-purple-600"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && playerName && gamePin.length === 6 && setRole('player')}
+              />
+          </div>
           <button
-            onClick={() => playerName && setRole('player')}
-            className="w-full bg-gray-900 text-white font-bold py-4 rounded text-xl hover:bg-gray-800 transition-colors disabled:opacity-50"
-            disabled={!playerName}
+            onClick={() => playerName && gamePin.length === 6 && setRole('player')}
+            className="w-full bg-gray-900 text-white font-bold py-4 rounded text-xl hover:bg-gray-800 transition-colors disabled:opacity-50 mt-4"
+            disabled={!playerName || gamePin.length !== 6}
           >
             Enter Game
           </button>
@@ -164,8 +175,18 @@ function App() {
 }
 
 // Wrapper to isolate Player Hook
-const PlayerWrapper: React.FC<{ playerName: string }> = ({ playerName }) => {
-  const { state, playerId, submitAnswer } = usePlayerGame(playerName);
+const PlayerWrapper: React.FC<{ playerName: string, gamePin: string }> = ({ playerName, gamePin }) => {
+  const { state, playerId, submitAnswer, connected } = usePlayerGame(playerName, gamePin);
+
+  if (!connected) {
+    return (
+      <div className="min-h-screen bg-purple-900 text-white flex flex-col items-center justify-center p-4 text-center">
+         <div className="animate-spin text-5xl mb-6">⏳</div>
+         <h2 className="text-2xl font-bold mb-2">Connecting to Game...</h2>
+         <p className="text-purple-300">PIN: {gamePin}</p>
+      </div>
+    );
+  }
 
   if (state.status === GameStatus.LOBBY) {
     return <Lobby state={state} playerName={playerName} />;

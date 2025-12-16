@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { GameState, GameStatus, Player, Question, MessageType, GameMessage, CHANNEL_NAME, GeneratedQuestionRaw } from '../types';
+import { useEffect, useState, useRef } from 'react';
+import { GameState, GameStatus, Question, MessageType, GameMessage, GeneratedQuestionRaw } from '../types';
 import { MAX_TIME } from '../constants';
 import { v4 as uuidv4 } from 'uuid';
+import Peer from 'peerjs';
 
 const INITIAL_STATE: GameState = {
   status: GameStatus.LOBBY,
@@ -9,34 +10,79 @@ const INITIAL_STATE: GameState = {
   currentQuestionIndex: 0,
   players: [],
   timer: MAX_TIME,
-  hostId: ''
+  hostId: '',
+  gamePin: '......'
 };
+
+// Helper to create Host ID from PIN
+const getHostId = (pin: string) => `appmod-v1-${pin}`;
 
 // Hook for the HOST
 export const useHostGame = () => {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
-  const channelRef = useRef<BroadcastChannel | null>(null);
+  
+  // We use refs for peer/connections to access them inside closures/effects without dependency cycles
+  const peerRef = useRef<Peer | null>(null);
+  const connectionsRef = useRef<Map<string, any>>(new Map());
   const timerRef = useRef<any>(null);
+  
+  // Ref for state to ensure event listeners always have access to latest state
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
 
   // Initialize Host
   useEffect(() => {
+    // Generate a 6-digit PIN
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    const myId = getHostId(pin);
     const hostId = uuidv4();
-    const newState = { ...INITIAL_STATE, hostId };
+
+    const newState = { ...INITIAL_STATE, hostId, gamePin: pin };
     setState(newState);
     
-    channelRef.current = new BroadcastChannel(CHANNEL_NAME);
-    
-    // Broadcast initial state
-    channelRef.current.postMessage({ type: MessageType.SYNC_STATE, payload: newState });
+    // Create Peer
+    const peer = new Peer(myId);
+    peerRef.current = peer;
 
-    // Listen for player events
-    channelRef.current.onmessage = (event) => {
-      const msg = event.data as GameMessage;
-      handleMessage(msg);
-    };
+    peer.on('open', (id) => {
+      console.log('Host initialized with Peer ID:', id);
+    });
+
+    peer.on('connection', (conn) => {
+      console.log('New connection from:', conn.peer);
+      
+      conn.on('open', () => {
+        // Add to connections
+        connectionsRef.current.set(conn.peer, conn);
+        // Immediately sync state to the new player
+        conn.send({ type: MessageType.SYNC_STATE, payload: stateRef.current });
+      });
+
+      conn.on('data', (data: any) => {
+        handleMessage(data);
+      });
+
+      conn.on('close', () => {
+        console.log('Connection closed:', conn.peer);
+        connectionsRef.current.delete(conn.peer);
+        // Optional: Remove player from list? For now, we keep them in case they reconnect.
+      });
+
+      conn.on('error', (err) => {
+        console.error('Connection error:', err);
+        connectionsRef.current.delete(conn.peer);
+      });
+    });
+
+    peer.on('error', (err) => {
+        console.error("Peer error:", err);
+        if (err.type === 'unavailable-id') {
+            alert("Could not claim Host ID. Please refresh to try again.");
+        }
+    });
 
     return () => {
-      channelRef.current?.close();
+      peer.destroy();
       if (timerRef.current) clearInterval(timerRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -44,9 +90,11 @@ export const useHostGame = () => {
 
   // Broadcast state whenever it changes locally
   useEffect(() => {
-    if (channelRef.current) {
-      channelRef.current.postMessage({ type: MessageType.SYNC_STATE, payload: state });
-    }
+    connectionsRef.current.forEach((conn) => {
+        if (conn.open) {
+            conn.send({ type: MessageType.SYNC_STATE, payload: state });
+        }
+    });
   }, [state]);
 
   // Timer Logic
@@ -101,7 +149,6 @@ export const useHostGame = () => {
     setState(prev => {
       const existing = prev.players.find(p => p.id === id);
       if (existing) {
-        // If player exists (e.g. refresh), update name if changed, but keep score
         if (existing.name !== name) {
            return {
              ...prev,
@@ -129,7 +176,6 @@ export const useHostGame = () => {
         players: prev.players.map(p => {
           if (p.id !== playerId) return p;
           
-          // Calculate score based on time remaining
           const points = isCorrect ? (1000 + (prev.timer * 10)) : 0;
           
           return {
@@ -182,7 +228,6 @@ export const useHostGame = () => {
   };
 
   const showStats = () => {
-    // Manually trigger reveal if timer hasn't run out yet
     setState(prev => ({ ...prev, status: GameStatus.REVEAL }));
   };
 
@@ -196,10 +241,9 @@ export const useHostGame = () => {
 };
 
 // Hook for the PLAYER
-export const usePlayerGame = (playerName: string) => {
+export const usePlayerGame = (playerName: string, gamePin: string) => {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
   
-  // Persist player ID in session storage to handle refreshes without creating ghost players
   const [playerId] = useState(() => {
     const key = 'appmod_player_id';
     const stored = sessionStorage.getItem(key);
@@ -209,60 +253,79 @@ export const usePlayerGame = (playerName: string) => {
     return newId;
   });
 
-  const channelRef = useRef<BroadcastChannel | null>(null);
-  const [joined, setJoined] = useState(false);
+  const peerRef = useRef<Peer | null>(null);
+  const connRef = useRef<any>(null);
+  const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    channelRef.current = new BroadcastChannel(CHANNEL_NAME);
-    
-    // Join the game logic
-    const joinGame = () => {
-       if (playerName) {
-         channelRef.current?.postMessage({ 
-           type: MessageType.PLAYER_JOIN, 
-           payload: { name: playerName, id: playerId } 
-         });
-       }
-    };
+    if (!gamePin || !playerName) return;
 
-    if (!joined) {
-       joinGame();
-       setJoined(true);
-    }
+    // Create a random Peer ID for the player
+    const peer = new Peer();
+    peerRef.current = peer;
 
-    channelRef.current.onmessage = (event) => {
-      const msg = event.data as GameMessage;
-      if (msg.type === MessageType.SYNC_STATE) {
-        const incomingState = msg.payload as GameState;
-        setState(incomingState);
+    peer.on('open', () => {
+      console.log('Player peer ready');
+      connectToHost();
+    });
 
-        // Auto-rejoin if we are missing from the host's player list
-        // This handles cases where the player joined before the host was ready,
-        // or if the host refreshed the page.
-        const amIInList = incomingState.players.some(p => p.id === playerId);
-        // Only rejoin if we are supposed to be in the game (we have a name) and we aren't in the list
-        if (!amIInList && playerName) {
-            console.log("Player missing from state, re-joining...", playerId);
-            joinGame();
-        }
-      }
+    peer.on('error', (err) => {
+        console.error("Player Peer Error:", err);
+        // Simple retry logic could go here
+    });
+
+    const connectToHost = () => {
+        const hostPeerId = getHostId(gamePin);
+        console.log('Connecting to host:', hostPeerId);
+        
+        const conn = peer.connect(hostPeerId, { reliable: true });
+        connRef.current = conn;
+
+        conn.on('open', () => {
+            console.log("Connected to Host!");
+            setConnected(true);
+            // Send Join Message
+            conn.send({ 
+               type: MessageType.PLAYER_JOIN, 
+               payload: { name: playerName, id: playerId } 
+            });
+        });
+
+        conn.on('data', (data: any) => {
+            if (data.type === MessageType.SYNC_STATE) {
+                const incomingState = data.payload as GameState;
+                setState(incomingState);
+            }
+        });
+
+        conn.on('close', () => {
+            setConnected(false);
+            console.log("Disconnected from Host");
+        });
+
+        conn.on('error', (err) => {
+            console.error("Connection error:", err);
+        });
     };
 
     return () => {
-      channelRef.current?.close();
+      peer.destroy();
     };
-  }, [playerName, playerId, joined]);
+  }, [gamePin, playerName, playerId]);
 
   const submitAnswer = (answerIndex: number) => {
-    channelRef.current?.postMessage({
-      type: MessageType.PLAYER_ANSWER,
-      payload: { playerId, answerIndex }
-    });
+    if (connRef.current && connRef.current.open) {
+        connRef.current.send({
+            type: MessageType.PLAYER_ANSWER,
+            payload: { playerId, answerIndex }
+        });
+    }
   };
 
   return {
     state,
     playerId,
-    submitAnswer
+    submitAnswer,
+    connected
   };
 };

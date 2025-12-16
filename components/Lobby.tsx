@@ -17,7 +17,7 @@ const Lobby: React.FC<LobbyProps> = ({ state, playerName }) => {
         <p className="text-purple-300">Waiting for host to start...</p>
       </div>
 
-      <div className="mt-12 text-sm text-purple-400">
+      <div className="mt-8 text-center text-sm text-purple-400">
         Playing AppMod Battle Royal
       </div>
     </div>

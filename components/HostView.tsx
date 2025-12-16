@@ -121,21 +121,30 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
     return (
       <div className="min-h-screen bg-gray-900 text-white p-8">
         <div className="max-w-4xl mx-auto">
-          <header className="flex justify-between items-center mb-12">
-            <h1 className="text-3xl font-black text-purple-400">AppMod Battle Royal <span className="text-white text-sm font-normal uppercase tracking-widest border border-white px-2 py-1 rounded ml-2">Host</span></h1>
-            <div className="bg-gray-800 px-4 py-2 rounded-full">
-              Players: <span className="font-bold text-green-400">{state.players.length}</span>
-            </div>
+          <header className="flex flex-col md:flex-row justify-between items-center mb-12 gap-4">
+             <div className="flex items-center gap-4">
+               <h1 className="text-3xl font-black text-purple-400">AppMod Battle Royal</h1>
+               <span className="text-white text-sm font-bold uppercase tracking-widest border border-white px-2 py-1 rounded">Host</span>
+             </div>
+             
+             {/* Game PIN Display */}
+             <div className="bg-white text-gray-900 px-8 py-4 rounded-lg shadow-xl text-center transform rotate-1 hover:rotate-0 transition-transform duration-300">
+               <div className="text-sm font-bold uppercase tracking-widest text-gray-500 mb-1">Game PIN</div>
+               <div className="text-5xl font-black tracking-widest text-purple-600">{state.gamePin}</div>
+             </div>
           </header>
+
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold">Lobby Status</h2>
+            <div className="bg-gray-800 px-4 py-2 rounded-full">
+               Players: <span className="font-bold text-green-400">{state.players.length}</span>
+            </div>
+          </div>
 
           {state.questions.length === 0 ? (
             <div className="bg-gray-800 p-8 rounded-xl border border-gray-700">
               <h2 className="text-2xl font-bold mb-4">Create your quiz</h2>
               <div className="mb-6">
-                <p className="text-gray-300 text-lg mb-6 leading-relaxed">
-                  Ready to test knowledge on Google Cloud product launches? <br/>
-                  This will generate trivia questions covering <span className="text-purple-300 font-bold">GKE, Cloud Run, Cloud Build, Artifact Manager, Cloud Deploy, Gemini Code Assist, Google Antigravity, Cloud Logging, and Cloud Monitoring.</span>
-                </p>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                     <div>
@@ -208,7 +217,7 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
               <h3 className="text-xl font-bold mb-4 text-gray-400 uppercase tracking-widest">Players in Lobby</h3>
               <div className="flex flex-wrap gap-3">
                 {state.players.map(p => (
-                  <div key={p.id} className="bg-gray-800 px-4 py-2 rounded-full animate-pulse border border-gray-700">
+                  <div key={p.id} className="bg-gray-800 px-4 py-2 rounded-full animate-pulse border border-gray-700 font-bold text-lg">
                     {p.name}
                   </div>
                 ))}
@@ -343,7 +352,7 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
       {/* Control Bar */}
       <div className="bg-gray-800 p-4 flex justify-between items-center text-white sticky bottom-0">
          <div className="text-gray-400 text-sm flex items-center gap-4">
-            <span>AppMod Battle Royal</span>
+            <span>AppMod Battle Royal (PIN: {state.gamePin})</span>
             <button onClick={toggleMute} className="text-xs border border-gray-600 px-2 py-1 rounded hover:bg-gray-700">
                {isMuted ? '🔇 Unmute Music' : '🔊 Mute Music'}
             </button>
