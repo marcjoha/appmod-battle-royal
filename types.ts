@@ -10,6 +10,8 @@ export interface Question {
   text: string;
   options: string[]; // Always 4 options
   correctIndex: number;
+  explanation?: string;
+  sourceUrl?: string;
 }
 
 export interface Player {
@@ -49,4 +51,6 @@ export interface GeneratedQuestionRaw {
   question: string;
   options: string[];
   correctIndex: number;
+  explanation?: string;
+  sourceUrl?: string;
 }

@@ -237,7 +237,9 @@ export const useHostGame = () => {
       id: uuidv4(),
       text: q.question,
       options: q.options,
-      correctIndex: q.correctIndex
+      correctIndex: q.correctIndex,
+      explanation: q.explanation,
+      sourceUrl: q.sourceUrl
     }));
     setState(prev => ({ ...prev, questions }));
   };

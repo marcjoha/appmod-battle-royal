@@ -15,7 +15,8 @@ interface HostViewProps {
 const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
   const { state, playerStatus, loadQuestions, startGame, nextQuestion, showStats } = useHostGame();
   const [loading, setLoading] = useState(false);
-  const [questionCount, setQuestionCount] = useState<number | ''>(10);
+  const [progress, setProgress] = useState(0);
+  const [questionCount, setQuestionCount] = useState<number>(10);
   const [timeRange, setTimeRange] = useState('Year to Date (YTD)');
   
   // Audio state
@@ -81,23 +82,27 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
 
   const handleGenerate = async () => {
     // Validate count before generating
-    let count = typeof questionCount === 'number' ? questionCount : parseInt(String(questionCount));
+    let count = questionCount;
     
     // Validation logic: bigger than 0 and max 30
-    if (isNaN(count) || count < 1) count = 1;
+    if (count < 1) count = 5;
     if (count > 30) count = 30;
     
-    // Update state to clamped value
-    setQuestionCount(count);
-
     setLoading(true);
+    setProgress(0);
     try {
-      const q = await generateQuestions(count, timeRange);
-      loadQuestions(q);
+      const q = await generateQuestions(count, timeRange, (p) => setProgress(p));
+      if (q.length === 0) {
+          alert("No questions could be generated. Please try again or adjust your criteria.");
+      } else {
+          loadQuestions(q);
+      }
     } catch (e) {
-      alert("Failed to generate questions. Try again.");
+      console.error(e);
+      alert("Failed to generate questions. Please try again.");
     } finally {
       setLoading(false);
+      setProgress(0);
     }
   };
 
@@ -148,25 +153,22 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                     <div>
-                        <label className="block text-gray-400 text-sm font-bold mb-2">Number of Questions (1-30)</label>
-                        <input 
-                            type="number"
-                            min="1"
-                            max="30"
-                            value={questionCount}
-                            onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === '') setQuestionCount('');
-                                else setQuestionCount(parseInt(val));
-                            }}
-                            onBlur={() => {
-                                let val = Number(questionCount);
-                                if (isNaN(val) || val < 1) val = 1;
-                                if (val > 30) val = 30;
-                                setQuestionCount(val);
-                            }}
-                            className="w-full bg-gray-900 border border-gray-600 text-white rounded p-3 focus:outline-none focus:border-purple-500"
-                        />
+                        <label className="block text-gray-400 text-sm font-bold mb-2">Number of Questions</label>
+                        <div className="grid grid-cols-4 gap-2">
+                            {[5, 10, 15, 20].map((num) => (
+                                <button
+                                    key={num}
+                                    onClick={() => setQuestionCount(num)}
+                                    className={`py-3 rounded font-bold border transition-all duration-200 ${
+                                        questionCount === num
+                                        ? 'bg-purple-600 border-purple-500 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)] transform scale-105'
+                                        : 'bg-gray-900 border-gray-600 text-gray-400 hover:bg-gray-800 hover:border-gray-500'
+                                    }`}
+                                >
+                                    {num}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                     <div>
                         <label className="block text-gray-400 text-sm font-bold mb-2">Time Range</label>
@@ -182,15 +184,21 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
                     </div>
                 </div>
 
-                <button 
-                  onClick={handleGenerate}
-                  disabled={loading}
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-8 rounded-lg transition-colors disabled:opacity-50 text-xl w-full md:w-auto shadow-lg"
-                >
-                  {loading ? 'Generating Questions...' : 'Generate Questions'}
-                </button>
+                {loading ? (
+                    <div className="w-full flex flex-col items-center justify-center pt-8 pb-2">
+                        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-purple-500 mb-4"></div>
+                        <h3 className="text-xl font-bold text-white mb-2">Generating Questions...</h3>
+                        <p className="text-sm text-gray-400 animate-pulse">Consulting Google Search & Gemini...</p>
+                    </div>
+                ) : (
+                    <button 
+                      onClick={handleGenerate}
+                      className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-8 rounded-lg transition-colors text-xl w-full md:w-auto shadow-lg"
+                    >
+                      Generate Questions
+                    </button>
+                )}
               </div>
-              <p className="text-gray-400 text-sm">Powered by Google Gemini.</p>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 bg-gray-800 rounded-xl border border-gray-700 space-y-8">
@@ -217,11 +225,7 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
               <h3 className="text-xl font-bold mb-4 text-gray-400 uppercase tracking-widest">Players in Lobby</h3>
               <div className="flex flex-wrap gap-3">
                 {state.players.map(p => {
-                    // Check if we have an active connection for this player
-                    // Since we track status by peerId, but player object has id=uuid...
-                    // In a real app we'd map them. Here we just assume they are connected if they appear.
-                    // But wait, the `playerStatus` map in gameStore uses peerId. 
-                    // Let's just assume green for now as the logic to map peerId <-> playerId requires more state.
+                    // Check status from map
                     return (
                       <div key={p.id} className="relative bg-gray-800 px-4 py-2 rounded-full border border-gray-700 font-bold text-lg flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
@@ -283,12 +287,12 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
+    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden font-sans">
       {/* Audio Element */}
       <audio ref={audioRef} src={MUSIC_URL} loop />
 
-      {/* Top Bar */}
-      <div className="bg-white p-4 shadow-sm flex justify-between items-center text-xl font-bold text-gray-600 border-b border-gray-200">
+      {/* Top Bar - Fixed Height (Header) */}
+      <div className="h-16 bg-white px-6 shadow-sm flex flex-none justify-between items-center text-xl font-bold text-gray-600 border-b border-gray-200 z-10">
          <div>Question {state.currentQuestionIndex + 1} / {state.questions.length}</div>
          
          <div className="flex items-center gap-2">
@@ -299,77 +303,114 @@ const HostView: React.FC<HostViewProps> = ({ onRestart }) => {
          </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center p-8 relative">
-        {/* Question */}
-        <div className="bg-white p-8 rounded shadow-lg text-center max-w-4xl w-full mb-8">
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-800 leading-tight">
-            {currentQ?.text}
-          </h2>
+      {/* Main Layout Content Area - Flex Grow */}
+      <div className="flex-1 flex flex-col items-center justify-between p-4 gap-4 w-full max-w-6xl mx-auto min-h-0">
+        
+        {/* Question Area - Max 25% of vertical space, min 15% */}
+        <div className="w-full flex-none flex items-center justify-center min-h-[15%] max-h-[25%]">
+             <div className="bg-white p-4 md:p-6 rounded-2xl shadow-md text-center w-full h-full flex items-center justify-center overflow-y-auto">
+                <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-800 leading-tight">
+                    {currentQ?.text}
+                </h2>
+             </div>
         </div>
 
-        {/* Timer/Status or Graph */}
-        <div className="flex-1 w-full flex flex-col justify-center max-w-5xl">
+        {/* Center Area: Timer / Graph - Takes remaining available space */}
+        <div className="w-full flex-1 min-h-0 flex flex-col justify-center relative">
           {state.status === GameStatus.PLAYING ? (
-             <div className="flex justify-center items-center h-full">
-                <div className="w-32 h-32 rounded-full border-8 border-purple-600 flex items-center justify-center text-5xl font-black text-purple-700 animate-pulse">
+             <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-40 h-40 rounded-full border-8 border-purple-600 flex items-center justify-center text-6xl font-black text-purple-700 animate-pulse bg-white shadow-xl">
                   {state.timer}
                 </div>
              </div>
           ) : (
-             <div className="h-64 w-full bg-white p-4 rounded shadow-lg flex flex-col">
-               <h3 className="text-gray-500 font-bold mb-4 uppercase text-sm">Response Distribution</h3>
-               <div className="flex-1">
-                 <ResponsiveContainer width="100%" height="100%">
-                    <RBarChart data={getAnswerStats()}>
-                      <RXAxis dataKey="name" tick={false} axisLine={false} />
-                      <RBar dataKey="count" radius={[4, 4, 0, 0]}>
-                        {getAnswerStats().map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.fill.replace('bg-', '').replace('-500', '') === 'red' ? '#ef4444' : entry.fill.replace('bg-', '').replace('-500', '') === 'blue' ? '#3b82f6' : entry.fill.replace('bg-', '').replace('-500', '') === 'yellow' ? '#eab308' : '#22c55e'} />
-                        ))}
-                      </RBar>
-                    </RBarChart>
-                 </ResponsiveContainer>
-               </div>
+            // Reveal Mode: Graph + Info Box
+            <div className="absolute inset-0 flex gap-4">
+                 {/* Graph Section - Takes available space */}
+                 <div className="flex-1 bg-white p-4 rounded-xl shadow-md flex flex-col min-w-0">
+                   <h3 className="text-gray-500 font-bold mb-2 uppercase text-xs flex-none">Response Distribution</h3>
+                   <div className="flex-1 min-h-0">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <RBarChart data={getAnswerStats()}>
+                          <RXAxis dataKey="name" tick={false} axisLine={false} />
+                          <RBar dataKey="count" radius={[4, 4, 0, 0]}>
+                            {getAnswerStats().map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.fill.replace('bg-', '').replace('-500', '') === 'red' ? '#ef4444' : entry.fill.replace('bg-', '').replace('-500', '') === 'blue' ? '#3b82f6' : entry.fill.replace('bg-', '').replace('-500', '') === 'yellow' ? '#eab308' : '#22c55e'} />
+                            ))}
+                          </RBar>
+                        </RBarChart>
+                     </ResponsiveContainer>
+                   </div>
+                 </div>
+
+                 {/* Info Box - 40% Width, only if explanation exists */}
+                 {currentQ.explanation && (
+                    <div className="w-[40%] bg-purple-50 border border-purple-100 p-4 rounded-xl shadow-md flex flex-col overflow-y-auto">
+                        <div className="flex items-center gap-2 mb-2">
+                             <span className="text-xl">💡</span>
+                             <h3 className="text-purple-900 font-bold uppercase text-xs">Did you know?</h3>
+                        </div>
+                        <p className="text-sm md:text-base text-gray-800 mb-4 flex-1 leading-relaxed">
+                            {currentQ.explanation}
+                        </p>
+                        {currentQ.sourceUrl && (
+                            <div className="mt-auto pt-2 border-t border-purple-200">
+                                <a 
+                                  href={currentQ.sourceUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 truncate"
+                                  title={currentQ.sourceUrl}
+                                >
+                                    <span>🔗 Source:</span>
+                                    <span className="truncate">{new URL(currentQ.sourceUrl).hostname}</span>
+                                    <span>↗</span>
+                                </a>
+                            </div>
+                        )}
+                    </div>
+                 )}
              </div>
           )}
         </div>
 
-        {/* Options Grid (Visual only for Host) */}
-        <div className="grid grid-cols-2 gap-4 w-full max-w-5xl mt-8">
+        {/* Options Grid - Fixed 35% height so it stays put */}
+        <div className="w-full h-[35%] flex-none grid grid-cols-2 gap-4">
           {currentQ?.options.map((opt, idx) => {
             const isCorrect = idx === currentQ.correctIndex;
             const isReveal = state.status === GameStatus.REVEAL;
             const opacity = isReveal && !isCorrect ? 'opacity-30' : 'opacity-100';
             
             return (
-              <div key={idx} className={`${ANSWER_COLORS[idx]} p-6 rounded shadow-lg flex items-center text-white text-xl font-bold transition-opacity duration-500 ${opacity} min-h-[100px]`}>
-                <div className="mr-4 text-2xl opacity-50 shrink-0">
+              <div key={idx} className={`${ANSWER_COLORS[idx]} p-4 md:p-6 rounded-lg shadow-lg flex items-center text-white text-lg md:text-2xl font-bold transition-opacity duration-500 ${opacity} h-full`}>
+                <div className="mr-4 text-3xl opacity-50 shrink-0">
                    {idx === 0 && '▲'}
                    {idx === 1 && '◆'}
                    {idx === 2 && '●'}
                    {idx === 3 && '■'}
                 </div>
-                <span className="break-words w-full">{opt}</span>
-                {isReveal && isCorrect && <span className="ml-auto text-3xl">✓</span>}
+                <span className="break-words w-full overflow-hidden text-ellipsis leading-tight line-clamp-3">{opt}</span>
+                {isReveal && isCorrect && <span className="ml-auto text-4xl">✓</span>}
               </div>
             );
           })}
         </div>
+      
       </div>
 
-      {/* Control Bar */}
-      <div className="bg-gray-800 p-4 flex justify-between items-center text-white sticky bottom-0">
+      {/* Control Bar - Fixed Height (Footer) */}
+      <div className="h-16 bg-gray-800 p-4 flex flex-none justify-between items-center text-white z-10 shadow-[0_-5px_15px_rgba(0,0,0,0.3)]">
          <div className="text-gray-400 text-sm flex items-center gap-4">
-            <span>AppMod Battle Royal (PIN: {state.gamePin})</span>
+            <span className="hidden md:inline">AppMod Battle Royal (PIN: {state.gamePin})</span>
             <button onClick={toggleMute} className="text-xs border border-gray-600 px-2 py-1 rounded hover:bg-gray-700">
-               {isMuted ? '🔇 Unmute Music' : '🔊 Mute Music'}
+               {isMuted ? '🔇' : '🔊'} Music
             </button>
          </div>
          <div>
             {state.status === GameStatus.PLAYING ? (
-              <button onClick={showStats} className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold">Skip Timer</button>
+              <button onClick={showStats} className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold transition-colors">Skip Timer</button>
             ) : (
-              <button onClick={nextQuestion} className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold text-xl">
+              <button onClick={nextQuestion} className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-bold text-lg transition-colors">
                  {isLastQuestion ? 'Show Results 🏆' : 'Next Question →'}
               </button>
             )}
