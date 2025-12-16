@@ -122,7 +122,7 @@ const PlayerGame: React.FC<PlayerGameProps> = ({ state, playerId, submitAnswer }
                  {/* Show Option Text if available */}
                  {currentQ && currentQ.options[idx] && (
                    <div className="text-white font-bold text-md md:text-xl leading-tight w-full break-words">
-                     {currentQ.options[idx]}
+                     {currentQ.options[idx].replace(/^[a-dA-D]\)\s*/, '')}
                    </div>
                  )}
                </button>
