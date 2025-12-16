@@ -14,8 +14,20 @@ const INITIAL_STATE: GameState = {
   gamePin: '......'
 };
 
-// Helper to create Host ID from PIN
-const getHostId = (pin: string) => `appmod-v1-${pin}`;
+// PeerJS Configuration with public STUN servers for better connectivity
+const PEER_CONFIG = {
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+    ]
+  }
+};
+
+// Helper to create Host ID from PIN - V2 to avoid collisions with previous sessions
+const getHostId = (pin: string) => `appmod-v2-${pin}`;
 
 // Hook for the HOST
 export const useHostGame = () => {
@@ -41,7 +53,7 @@ export const useHostGame = () => {
     setState(newState);
     
     // Create Peer
-    const peer = new Peer(myId);
+    const peer = new Peer(myId, PEER_CONFIG);
     peerRef.current = peer;
 
     peer.on('open', (id) => {
@@ -71,7 +83,6 @@ export const useHostGame = () => {
       conn.on('close', () => {
         console.log('Connection closed:', conn.peer);
         connectionsRef.current.delete(conn.peer);
-        // Optional: Remove player from list? For now, we keep them in case they reconnect.
       });
 
       conn.on('error', (err) => {
@@ -96,12 +107,13 @@ export const useHostGame = () => {
 
   // Broadcast state whenever it changes locally
   useEffect(() => {
-    // We throttle timer updates to avoid saturating the network? 
-    // Actually PeerJS usually handles it, but let's be safe.
-    // For now, raw broadcast is fine for < 100 players.
     connectionsRef.current.forEach((conn) => {
         if (conn.open) {
-            conn.send({ type: MessageType.SYNC_STATE, payload: state });
+            try {
+                conn.send({ type: MessageType.SYNC_STATE, payload: state });
+            } catch (e) {
+                console.error("Failed to send to peer:", conn.peer, e);
+            }
         }
     });
   }, [state]);
@@ -252,6 +264,7 @@ export const useHostGame = () => {
 // Hook for the PLAYER
 export const usePlayerGame = (playerName: string, gamePin: string) => {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
+  const lastUpdateRef = useRef<number>(Date.now());
   
   const [playerId] = useState(() => {
     const key = 'appmod_player_id';
@@ -265,12 +278,37 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<any>(null);
   const [connected, setConnected] = useState(false);
+  const [connectAttempt, setConnectAttempt] = useState(0);
+
+  // Watchdog: Check if state is stale
+  useEffect(() => {
+    const watchdog = setInterval(() => {
+      if (connected && connRef.current?.open) {
+         const silenceDuration = Date.now() - lastUpdateRef.current;
+         // If we haven't heard from host in 3 seconds, ask for state
+         if (silenceDuration > 3000) {
+            console.warn("Watchdog: State stale, requesting sync...");
+            try {
+                connRef.current.send({ type: 'REQUEST_STATE' });
+            } catch (e) {
+                console.error("Watchdog send failed", e);
+            }
+         }
+      }
+    }, 3000);
+    return () => clearInterval(watchdog);
+  }, [connected]);
 
   useEffect(() => {
     if (!gamePin || !playerName) return;
 
-    // Create a random Peer ID for the player
-    const peer = new Peer();
+    // Clean up previous peer if exists (force reconnect logic)
+    if (peerRef.current) {
+        peerRef.current.destroy();
+        peerRef.current = null;
+    }
+
+    const peer = new Peer(PEER_CONFIG);
     peerRef.current = peer;
 
     peer.on('open', () => {
@@ -280,7 +318,7 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
 
     peer.on('error', (err) => {
         console.error("Player Peer Error:", err);
-        // Simple retry logic could go here
+        setConnected(false);
     });
 
     const connectToHost = () => {
@@ -293,6 +331,8 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
         conn.on('open', () => {
             console.log("Connected to Host!");
             setConnected(true);
+            lastUpdateRef.current = Date.now();
+            
             // Send Join Message
             conn.send({ 
                type: MessageType.PLAYER_JOIN, 
@@ -302,6 +342,7 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
 
         conn.on('data', (data: any) => {
             if (data.type === MessageType.SYNC_STATE) {
+                lastUpdateRef.current = Date.now();
                 const incomingState = data.payload as GameState;
                 setState(incomingState);
             }
@@ -320,7 +361,7 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
     return () => {
       peer.destroy();
     };
-  }, [gamePin, playerName, playerId]);
+  }, [gamePin, playerName, playerId, connectAttempt]);
 
   const submitAnswer = (answerIndex: number) => {
     if (connRef.current && connRef.current.open) {
@@ -332,9 +373,13 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
   };
   
   const requestSync = () => {
+      console.log("Manual Sync Requested");
       if (connRef.current && connRef.current.open) {
-          console.log("Requesting manual sync...");
           connRef.current.send({ type: 'REQUEST_STATE' });
+      } else {
+          // If connection is broken, force a full re-initialization
+          console.log("Connection broken, forcing reconnect...");
+          setConnectAttempt(prev => prev + 1);
       }
   };
 
