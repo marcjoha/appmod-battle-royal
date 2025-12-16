@@ -14,6 +14,8 @@ function App() {
   const [hostPassword, setHostPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  const HAS_HOST_PASSWORD = !!import.meta.env.VITE_HOST_PASSWORD;
+
   const verifyHostPassword = () => {
     if (hostPassword === import.meta.env.VITE_HOST_PASSWORD) {
       setRole('host');
@@ -32,7 +34,7 @@ function App() {
     return <PlayerWrapper playerName={playerName} gamePin={gamePin} />;
   }
 
-  if (role === 'host-login') {
+  if (HAS_HOST_PASSWORD && role === 'host-login') {
     return (
       <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4 text-white relative overflow-hidden">
         <SnowOverlay />
@@ -117,7 +119,13 @@ function App() {
         </div>
 
         <button 
-          onClick={() => setRole('host-login')}
+          onClick={() => {
+            if (HAS_HOST_PASSWORD) {
+              setRole('host-login');
+            } else {
+              setRole('host');
+            }
+          }}
           className="mt-4 text-white underline font-bold hover:text-purple-200"
         >
           Host a game instead
