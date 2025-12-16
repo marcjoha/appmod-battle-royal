@@ -2,6 +2,8 @@
 
 This is a Kahoot-clone built for people who care about Google Cloud App Modernization products.
 
+The Gemini API key is used for generating questions. The host password is optional, but protects the app's host site where you kick off game play (and use the Gemini API for generating questions).
+
 Originally vibe coded in Google AI studio.
 
 ## Run Locally
