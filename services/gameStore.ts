@@ -14,12 +14,26 @@ const INITIAL_STATE: GameState = {
   gamePin: '......'
 };
 
-// Revert to default PeerJS config (works better in some cloud environments than hardcoded STUN)
+// PeerJS Configuration
+// We use Google's public STUN servers which are reliable.
+// IMPORTANT: Force secure (HTTPS/WSS) connection to 0.peerjs.com even if app is on HTTP.
+// This prevents 'Failed to fetch' errors on mobile/networks that block HTTP port 80 or mixed content.
 const PEER_CONFIG = {
-  debug: 1
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' }
+    ]
+  },
+  secure: true,
+  host: '0.peerjs.com',
+  port: 443
 };
 
-// Helper to create Host ID from PIN - V3 to avoid collisions
+// Helper to create Host ID from PIN - V3
 const getHostId = (pin: string) => `appmod-v3-${pin}`;
 
 // Helper for safe JSON parsing
@@ -37,6 +51,7 @@ const safeParse = (data: any) => {
 export const useHostGame = () => {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
   const [playerStatus, setPlayerStatus] = useState<Record<string, boolean>>({}); // Track online status
+  const [retryCount, setRetryCount] = useState(0); // Trigger retries
   
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<Map<string, any>>(new Map());
@@ -48,13 +63,24 @@ export const useHostGame = () => {
 
   // Initialize Host
   useEffect(() => {
-    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    // Keep the same PIN across retries if possible, or generate new one if it was empty
+    let pin = state.gamePin === '......' ? Math.floor(100000 + Math.random() * 900000).toString() : state.gamePin;
     const myId = getHostId(pin);
-    const hostId = uuidv4();
+    const hostId = state.hostId || uuidv4();
 
-    const newState = { ...INITIAL_STATE, hostId, gamePin: pin };
-    setState(newState);
+    // Only update state if it's a fresh start
+    if (state.gamePin === '......') {
+        const newState = { ...INITIAL_STATE, hostId, gamePin: pin };
+        setState(newState);
+    }
     
+    // Cleanup previous peer
+    if (peerRef.current) {
+        peerRef.current.destroy();
+        peerRef.current = null;
+    }
+
+    console.log(`Host connecting to PeerServer... (Attempt ${retryCount})`);
     const peer = new Peer(myId, PEER_CONFIG);
     peerRef.current = peer;
 
@@ -82,8 +108,7 @@ export const useHostGame = () => {
              return;
         }
         if (data.type === 'PONG') {
-            // Player is alive
-            return;
+            return; // Player is alive
         }
         handleMessage(data);
       });
@@ -101,30 +126,41 @@ export const useHostGame = () => {
       });
     });
 
-    peer.on('error', (err) => {
+    peer.on('error', (err: any) => {
         console.error("Peer error:", err);
         if (err.type === 'unavailable-id') {
-            alert("Host ID collision. Refreshing...");
-            window.location.reload();
+            // ID Collision: Try a new PIN
+            const newPin = Math.floor(100000 + Math.random() * 900000).toString();
+            console.log("Collision, trying new PIN:", newPin);
+            setState(prev => ({...prev, gamePin: newPin}));
+            // Trigger retry
+            setTimeout(() => setRetryCount(prev => prev + 1), 1000);
+        } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'peer-unavailable') {
+            // Network/Server error: Retry connection
+            console.log("Network error, retrying in 3s...");
+            setTimeout(() => setRetryCount(prev => prev + 1), 3000);
         }
     });
 
-    // Start Heartbeat to keep NAT open
+    // Start Heartbeat
     heartbeatRef.current = setInterval(() => {
         connectionsRef.current.forEach((conn) => {
             if (conn.open) {
                 safeSend(conn, { type: 'PING' });
             }
         });
-    }, 2000);
+    }, 3000);
 
     return () => {
-      peer.destroy();
+      // Don't destroy peer here immediately if we are just re-rendering, 
+      // but rely on the effect cleanup or the explicit destroy at start of effect.
+      // Actually, for React useEffect, we should cleanup.
+      if (peerRef.current) peerRef.current.destroy();
       if (timerRef.current) clearInterval(timerRef.current);
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryCount]); // Re-run when retryCount changes
 
   // Broadcast state changes
   useEffect(() => {
@@ -175,7 +211,6 @@ export const useHostGame = () => {
 
   const safeSend = (conn: any, msg: any) => {
       try {
-          // Explicitly stringify to ensure reliable transmission across different browser environments
           conn.send(JSON.stringify(msg));
       } catch (e) {
           console.error("Send failed", e);
@@ -184,8 +219,6 @@ export const useHostGame = () => {
 
   const handleMessage = (msg: GameMessage) => {
     if (msg.type === MessageType.PLAYER_JOIN) {
-        // Map the ephemeral peer ID to the persistent player ID if needed, 
-        // but for now we just use the ID sent in payload
         addPlayer(msg.payload.name, msg.payload.id);
     } else if (msg.type === MessageType.PLAYER_ANSWER) {
         recordAnswer(msg.payload.playerId, msg.payload.answerIndex);
@@ -277,7 +310,7 @@ export const useHostGame = () => {
 
   return {
     state,
-    playerStatus, // Exported to show in UI
+    playerStatus,
     loadQuestions,
     startGame,
     nextQuestion,
@@ -304,19 +337,19 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
   const [connected, setConnected] = useState(false);
   const [connectAttempt, setConnectAttempt] = useState(0);
 
-  // Watchdog
+  // Watchdog: If connected but silent for too long, ping
   useEffect(() => {
     const watchdog = setInterval(() => {
       if (connected && connRef.current?.open) {
          const silenceDuration = Date.now() - lastUpdateRef.current;
-         if (silenceDuration > 3000) {
+         if (silenceDuration > 5000) {
             console.warn("Watchdog: stale, pinging...");
             try {
                 connRef.current.send(JSON.stringify({ type: 'REQUEST_STATE' }));
             } catch (e) { console.error(e); }
          }
       }
-    }, 3000);
+    }, 2000);
     return () => clearInterval(watchdog);
   }, [connected]);
 
@@ -328,6 +361,7 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
         peerRef.current = null;
     }
 
+    // New Peer
     const peer = new Peer(PEER_CONFIG);
     peerRef.current = peer;
 
@@ -338,13 +372,22 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
     peer.on('error', (err) => {
         console.error("Player Peer Error:", err);
         setConnected(false);
+        // If it's a fatal initialization error (like can't reach server), retry after delay
+        if (err.type === 'network' || err.type === 'server-error' || err.type === 'peer-unavailable' || err.type === 'socket-error') {
+             console.log("Peer fatal error, retrying in 2s...");
+             setTimeout(() => {
+                 setConnectAttempt(prev => prev + 1);
+             }, 2000);
+        }
     });
 
     const connectToHost = () => {
         const hostPeerId = getHostId(gamePin);
         console.log('Connecting to:', hostPeerId);
         
-        const conn = peer.connect(hostPeerId, { reliable: true });
+        const conn = peer.connect(hostPeerId, {
+             reliable: true
+        });
         connRef.current = conn;
 
         conn.on('open', () => {
@@ -353,10 +396,14 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
             lastUpdateRef.current = Date.now();
             
             // Send Join
-            conn.send(JSON.stringify({ 
-               type: MessageType.PLAYER_JOIN, 
-               payload: { name: playerName, id: playerId } 
-            }));
+            setTimeout(() => {
+                try {
+                    conn.send(JSON.stringify({ 
+                       type: MessageType.PLAYER_JOIN, 
+                       payload: { name: playerName, id: playerId } 
+                    }));
+                } catch(e) { console.error("Join send failed", e); }
+            }, 500); // Small delay to ensure channel is ready
         });
 
         conn.on('data', (raw: any) => {
@@ -365,7 +412,6 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
             if (!data) return;
 
             if (data.type === 'PING') {
-                // Respond to keep-alive
                 try { conn.send(JSON.stringify({ type: 'PONG' })); } catch (e) {}
                 return;
             }
@@ -378,21 +424,30 @@ export const usePlayerGame = (playerName: string, gamePin: string) => {
 
         conn.on('close', () => {
             setConnected(false);
-            console.log("Disconnected");
+            console.log("Disconnected (Close event)");
+        });
+        
+        conn.on('error', (err) => {
+            console.error("Conn Error", err);
+            setConnected(false);
         });
     };
 
     return () => {
-      peer.destroy();
+      if (peerRef.current) peerRef.current.destroy();
     };
   }, [gamePin, playerName, playerId, connectAttempt]);
 
   const submitAnswer = (answerIndex: number) => {
     if (connRef.current && connRef.current.open) {
-        connRef.current.send(JSON.stringify({
-            type: MessageType.PLAYER_ANSWER,
-            payload: { playerId, answerIndex }
-        }));
+        try {
+            connRef.current.send(JSON.stringify({
+                type: MessageType.PLAYER_ANSWER,
+                payload: { playerId, answerIndex }
+            }));
+        } catch(e) {
+            console.error("Answer send failed", e);
+        }
     }
   };
   
