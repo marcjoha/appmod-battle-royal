@@ -27,14 +27,22 @@ const calculateDateRange = (timeRange: string): string => {
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Generate a small batch of questions
-const generateBatch = async (batchSize: number, dateRangeText: string): Promise<GeneratedQuestionRaw[]> => {
+const generateBatch = async (
+  batchSize: number, 
+  dateRangeText: string,
+  avoidList: string[] = []
+): Promise<GeneratedQuestionRaw[]> => {
   const model = "gemini-2.5-flash";
   
+  const avoidContext = avoidList.length > 0 
+    ? `\n7. CRITICAL: Do NOT generate questions about the following topics/facts as they have already been covered:\n- ${avoidList.join("\n- ")}`
+    : "";
+
   const prompt = `You are a strict fact-checker and trivia generator for Google Cloud experts.
 
 Task: Generate exactly ${batchSize} multiple-choice trivia questions concerning Google Cloud product launches and new features released strictly between ${dateRangeText}.
 
-Products to cover: Google Kubernetes Engine, Cloud Run, Cloud Build, Artifact Manager, Cloud Deploy, Gemini Code Assist, Google Antigravity, Cloud Logging, and Cloud Monitoring.
+Products to cover: Google Kubernetes Engine, Cloud Run, Cloud Build, Artifact Manager, Cloud Deploy, Gemini Code Assist, Google Antigravity, Cloud Logging, Cloud Monitoring, Kubernetes (the open source project), Cloud Workstations, App Hub, App Engine, Firebase, and App Design Center.
 
 STRICT ACCURACY RULES:
 1. Use the Google Search tool to verify every single question against real release notes or blog posts.
@@ -42,10 +50,10 @@ STRICT ACCURACY RULES:
 3. If "Google Antigravity" has no real cloud product updates in this timeframe, ignore it.
 4. If you cannot find enough strictly matching facts, return fewer questions.
 5. Ensure questions are diverse and not duplicates of common knowledge.
-6. Ensure questions are highly diverse in topic and phrasing. Avoid rephrasing the same fact or asking very similar questions, even if wording differs slightly.
+6. Ensure questions are highly diverse in topic and phrasing. Avoid rephrasing the same fact or asking very similar questions, even if wording differs slightly.${avoidContext}
 
 Output Format:
-Return ONLY a valid JSON array. Do not wrap it in markdown code blocks (no \`\`\`json).
+Return ONLY a valid JSON array. Do not wrap it in markdown code blocks.
 Structure:
 [
   {
@@ -73,7 +81,7 @@ Structure:
     text = text.replace(/```json/g, '').replace(/```/g, '').trim();
     
     // Attempt to extract JSON array if there's surrounding text
-    const jsonMatch = text.match(/\[\s*\{[\s\S]*\}\s*\]/);
+    const jsonMatch = text.match(/[\[\s*\{[\s\S]*\}\s*\]/);
     if (jsonMatch) {
       text = jsonMatch[0];
     }
@@ -110,11 +118,12 @@ export const generateQuestions = async (
   let completedChunks = 0;
   if (onProgress) onProgress(0);
 
-  // 2. Create Promises for parallel execution
-  const promises = chunkSizes.map(async (size, index) => {
-      // Stagger start times slightly to prevent burst limit issues (200ms apart)
-      await delay(index * 200);
+  const allQuestions: GeneratedQuestionRaw[] = [];
+  // Store short summaries/signatures of generated questions to avoid duplicates
+  const generatedContext: string[] = [];
 
+  // 2. Execute batches SEQUENTIALLY to build context
+  for (const size of chunkSizes) {
       let batchData: GeneratedQuestionRaw[] = [];
       let attempts = 0;
       const MAX_RETRIES = 3;
@@ -126,11 +135,23 @@ export const generateQuestions = async (
                   // Exponential backoff with jitter
                   await delay(1000 * Math.pow(2, attempts) + Math.random() * 500);
               }
-              batchData = await generateBatch(size, dateRangeText);
+              // Pass the context of what we've already generated
+              batchData = await generateBatch(size, dateRangeText, generatedContext);
           } catch (e) {
-              console.warn(`Batch ${index + 1} attempt ${attempts + 1} failed.`);
+              console.warn(`Batch attempt ${attempts + 1} failed.`);
           }
           attempts++;
+      }
+
+      if (batchData.length > 0) {
+          allQuestions.push(...batchData);
+          // Update context with new questions (using question text + explanation for robustness)
+          batchData.forEach(q => {
+             // Keep context concise: just the core question topic if possible, but full question is safer
+             generatedContext.push(`${q.question} (Answer: ${q.options[q.correctIndex]})`);
+          });
+      } else {
+          console.error(`Batch failed permanently after ${MAX_RETRIES} attempts.`);
       }
 
       completedChunks++;
@@ -138,27 +159,23 @@ export const generateQuestions = async (
           onProgress(Math.round((completedChunks / chunkSizes.length) * 100));
       }
       
-      if (batchData.length === 0) {
-          console.error(`Batch ${index + 1} failed permanently after ${MAX_RETRIES} attempts.`);
-      }
+      // Small delay between batches to be nice to the API
+      await delay(500);
+  }
 
-      return batchData;
-  });
-
-  // 3. Wait for all batches to finish
-  const results = await Promise.all(promises);
-  let allQuestions = results.flat();
-
-  // 4. De-duplication (since parallel batches don't know about each other)
+  // 3. Final De-duplication (Safety net)
   const seen = new Set<string>();
-  allQuestions = allQuestions.filter(q => {
-      // Create a unique fingerprint for the question
-      const fingerprint = (q.question + q.correctIndex).toLowerCase().trim();
+  const uniqueQuestions = allQuestions.filter(q => {
+      // Create a unique fingerprint for the question by normalizing question and explanation
+      const normalizeText = (text: string) => 
+          text.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "").replace(/\s\s+/g, ' ').trim();
+
+      const fingerprint = normalizeText(q.question) + normalizeText(q.explanation) + q.correctIndex;
       if (seen.has(fingerprint)) return false;
       seen.add(fingerprint);
       return true;
   });
 
-  // 5. Trim to requested count
-  return allQuestions.slice(0, totalCount);
+  // 4. Trim to requested count
+  return uniqueQuestions.slice(0, totalCount);
 };
