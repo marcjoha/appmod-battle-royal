@@ -42,6 +42,7 @@ STRICT ACCURACY RULES:
 3. If "Google Antigravity" has no real cloud product updates in this timeframe, ignore it.
 4. If you cannot find enough strictly matching facts, return fewer questions.
 5. Ensure questions are diverse and not duplicates of common knowledge.
+6. Ensure questions are highly diverse in topic and phrasing. Avoid rephrasing the same fact or asking very similar questions, even if wording differs slightly.
 
 Output Format:
 Return ONLY a valid JSON array. Do not wrap it in markdown code blocks (no \`\`\`json).
